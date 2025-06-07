@@ -38,12 +38,16 @@ class DynamicThreadPool
 
   def spawn_worker
     thread = Thread.new do
-        while @running || !@queue.empty?
-          task = @queue.pop
+      while @running || !@queue.empty?
+        task = @queue.pop
+        begin
           task.call
+        rescue => e
+          puts "Erro ao executar tarefa: #{e.message}"
         end
-  end
-    @threads << thread  # Sem synchronize aqui
+      end
+    end
+    @threads << thread
   end
 
   def maybe_spawn_thread
