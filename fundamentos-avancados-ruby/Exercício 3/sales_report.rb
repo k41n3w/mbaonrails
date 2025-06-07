@@ -1,3 +1,5 @@
+require "tty-table"
+
 class SalesReport
   include Enumerable
 
@@ -26,9 +28,49 @@ class SalesReport
 
   def above_average_sales
     average = map { |sale| sale[:amount] }.sum.to_f / count
-    result = select { |sale| sale[:amount] > average }
-    puts "O valor médio é: R$#{'%.2f' % average}"
-    result
+    select { |sale| sale[:amount] > average }
+  end
+
+  def print_sales_table
+    print_table("Todas as Vendas", @sales)
+  end
+
+  def print_top_sales(n)
+    top = top_sales(n)
+    print_table("Top #{n} Vendas", top)
+  end
+
+  def print_above_average_sales
+    average = map { |sale| sale[:amount] }.sum.to_f / count
+    print_table("Vendas Acima da Média", above_average_sales)
+  end
+
+  def print_total_by_category
+    data = total_by_category.map do |category, total|
+      [category, "R$#{'%.2f' % total}"]
+    end
+    table = TTY::Table.new(["Categoria", "Total de Vendas"], data)
+    puts table.render(:unicode)
+  end
+
+  def print_grouped_by_category
+    data = grouped_by_category.map do |category, products|
+      [category, products.join(", ")]
+    end
+    table = TTY::Table.new(["Categoria", "Produtos"], data)
+    puts table.render(:unicode)
+  end
+
+  private
+
+  def print_table(title, sales)
+    puts "\n#{title}"
+    headers = ["Produto", "Categoria", "Valor (R$)"]
+    rows = sales.map do |sale|
+      [sale[:product], sale[:category], "R$#{'%.2f' % sale[:amount]}"]
+    end
+    table = TTY::Table.new(headers, rows)
+    puts table.render(:unicode)
   end
 end
 
@@ -43,14 +85,8 @@ sales = [
 
 report = SalesReport.new(sales)
 
-puts "Total por categoria:"
-puts report.total_by_category
-
-puts "\nTop 3 vendas:"
-puts report.top_sales(3)
-
-puts "\nAgrupado por categoria:"
-puts report.grouped_by_category
-
-puts "\nVendas acima da média:"
-puts report.above_average_sales
+report.print_sales_table
+report.print_top_sales(3)
+report.print_above_average_sales
+report.print_total_by_category
+report.print_grouped_by_category
