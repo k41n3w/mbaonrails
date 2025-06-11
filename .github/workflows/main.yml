@@ -11,6 +11,8 @@ jobs:
       - name: Extract PR Info and Labels
         id: pr_info
         run: |
+          echo '::group::Extraindo informações do PR'
+
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_STATUS="${{ github.event.pull_request.state }}"
@@ -22,6 +24,7 @@ jobs:
 
           LABELS_JSON='${{ toJson(github.event.pull_request.labels) }}'
           AI_TOOLS=$(echo "$LABELS_JSON" | jq -r '[.[] | select(.name=="Copilot" or .name=="Cursor" or .name=="Devin" or .name=="Não usei IA") | .name]')
+          ESCAPED_AI_TOOLS=$(echo "$AI_TOOLS" | jq -c .)
 
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
@@ -30,8 +33,10 @@ jobs:
           echo "developer_email=$DEV_EMAIL" >> $GITHUB_OUTPUT
           echo "created_at=$CREATED_AT" >> $GITHUB_OUTPUT
           echo "merged_at=$MERGED_AT" >> $GITHUB_OUTPUT
-          echo "ai_tools=$AI_TOOLS" >> $GITHUB_OUTPUT
+          echo "ai_tools=$ESCAPED_AI_TOOLS" >> $GITHUB_OUTPUT
           echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
+
+          echo '::endgroup::'
 
       - name: Send Data to Supabase
         env:
