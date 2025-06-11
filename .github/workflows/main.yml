@@ -1,0 +1,62 @@
+name: PR AI Usage Metrics
+
+on:
+  pull_request:
+    types: [closed, labeled]
+
+jobs:
+  send_metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract PR Info and Labels
+        id: pr_info
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_STATUS="${{ github.event.pull_request.state }}"
+          DEV_NAME="${{ github.event.pull_request.user.login }}"
+          DEV_EMAIL="${{ github.event.pull_request.user.email || 'unknown@example.com' }}" # GitHub might not expose email directly
+          CREATED_AT="${{ github.event.pull_request.created_at }}"
+          MERGED_AT="${{ github.event.pull_request.merged_at }}"
+          REPO_NAME="${{ github.repository }}"
+
+          AI_TOOLS=""
+          for label in ${{ toJson(github.event.pull_request.labels.*.name) }}; do
+            if [[ "$label" == "Não usei IA" || "$label" == "Cursor" || "$label" == "Copilot" || "$label" == "Devin" ]]; then
+              AI_TOOLS+="$label,"
+            fi
+          done
+          AI_TOOLS="[$(echo "$AI_TOOLS" | sed 's/,$//' | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')]"
+
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "PR_STATUS=$PR_STATUS" >> $GITHUB_OUTPUT
+          echo "DEV_NAME=$DEV_NAME" >> $GITHUB_OUTPUT
+          echo "DEV_EMAIL=$DEV_EMAIL" >> $GITHUB_OUTPUT
+          echo "CREATED_AT=$CREATED_AT" >> $GITHUB_OUTPUT
+          echo "MERGED_AT=$MERGED_AT" >> $GITHUB_OUTPUT
+          echo "AI_TOOLS=$AI_TOOLS" >> $GITHUB_OUTPUT
+          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_OUTPUT
+
+      - name: Send Data to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} # Ou a URL completa do seu projeto
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -X POST \
+            "${SUPABASE_URL}/rest/v1/pr_metrics" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d '{
+              "pr_number": ${{ steps.pr_info.outputs.PR_NUMBER }},
+              "pr_title": "${{ steps.pr_info.outputs.PR_TITLE }}",
+              "pr_status": "${{ steps.pr_info.outputs.PR_STATUS }}",
+              "developer_name": "${{ steps.pr_info.outputs.DEV_NAME }}",
+              "developer_email": "${{ steps.pr_info.outputs.DEV_EMAIL }}",
+              "created_at": "${{ steps.pr_info.outputs.CREATED_AT }}",
+              "merged_at": ${{ steps.pr_info.outputs.MERGED_AT == 'null' && 'null' || format('"{0}"', steps.pr_info.outputs.MERGED_AT) }},
+              "ai_tools": ${{ steps.pr_info.outputs.AI_TOOLS }},
+              "repository": "${{ steps.pr_info.outputs.REPO_NAME }}"
+            }'
