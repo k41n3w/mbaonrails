@@ -26,13 +26,20 @@ jobs:
           AI_TOOLS=$(echo "$LABELS_JSON" | jq -r '[.[] | select(.name=="Copilot" or .name=="Cursor" or .name=="Devin" or .name=="Não usei IA") | .name]')
           ESCAPED_AI_TOOLS=$(echo "$AI_TOOLS" | jq -c .)
 
+          # Tratar MERGED_AT para null ou string válida
+          if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
+            MERGED_AT_JSON=null
+          else
+            MERGED_AT_JSON="\"$MERGED_AT\""
+          fi
+
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "pr_status=$PR_STATUS" >> $GITHUB_OUTPUT
           echo "developer_name=$DEV_NAME" >> $GITHUB_OUTPUT
           echo "developer_email=$DEV_EMAIL" >> $GITHUB_OUTPUT
           echo "created_at=$CREATED_AT" >> $GITHUB_OUTPUT
-          echo "merged_at=$MERGED_AT" >> $GITHUB_OUTPUT
+          echo "merged_at=$MERGED_AT_JSON" >> $GITHUB_OUTPUT
           echo "ai_tools=$ESCAPED_AI_TOOLS" >> $GITHUB_OUTPUT
           echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
 
@@ -51,7 +58,7 @@ jobs:
           DEVELOPER_NAME="${{ steps.pr_info.outputs.developer_name }}"
           DEVELOPER_EMAIL="${{ steps.pr_info.outputs.developer_email }}"
           CREATED_AT="${{ steps.pr_info.outputs.created_at }}"
-          MERGED_AT="${{ steps.pr_info.outputs.merged_at }}"
+          MERGED_AT_JSON=${{ steps.pr_info.outputs.merged_at }}
           AI_TOOLS_RAW='${{ steps.pr_info.outputs.ai_tools }}'
           REPOSITORY="${{ steps.pr_info.outputs.repository }}"
 
@@ -62,7 +69,7 @@ jobs:
             --arg developer_name "$DEVELOPER_NAME" \
             --arg developer_email "$DEVELOPER_EMAIL" \
             --arg created_at "$CREATED_AT" \
-            --arg merged_at "$MERGED_AT" \
+            --argjson merged_at "$MERGED_AT_JSON" \
             --arg repository "$REPOSITORY" \
             --argjson ai_tools "$AI_TOOLS_RAW" \
             '{
@@ -72,7 +79,7 @@ jobs:
               developer_name: $developer_name,
               developer_email: $developer_email,
               created_at: $created_at,
-              merged_at: ($merged_at == "" or $merged_at == "null" ? null : $merged_at),
+              merged_at: $merged_at,
               ai_tools: $ai_tools,
               repository: $repository
             }' > payload.json
