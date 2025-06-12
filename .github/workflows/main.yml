@@ -2,7 +2,7 @@ name: PR AI Usage Metrics
 
 on:
   pull_request:
-    types: [closed, labeled]
+    types: [opened, reopened, synchronize, closed, labeled, unlabeled]
 
 jobs:
   send_metrics:
@@ -26,7 +26,6 @@ jobs:
           AI_TOOLS=$(echo "$LABELS_JSON" | jq -r '[.[] | select(.name=="Copilot" or .name=="Cursor" or .name=="Devin" or .name=="Não usei IA") | .name]')
           ESCAPED_AI_TOOLS=$(echo "$AI_TOOLS" | jq -c .)
 
-          # Tratar MERGED_AT para null ou string válida
           if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
             MERGED_AT_JSON=null
           else
@@ -87,11 +86,11 @@ jobs:
           cat payload.json
 
           curl -X POST \
-            "${SUPABASE_URL}/rest/v1/pr_metrics" \
+            "${SUPABASE_URL}/rest/v1/pr_metrics?on_conflict=repository,pr_number" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
-            -H "Prefer: return=representation" \
+            -H "Prefer: return=representation,resolution=merge-duplicates" \
             -d @payload.json
 
           echo '::endgroup::'
