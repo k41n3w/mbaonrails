@@ -8,7 +8,7 @@ jobs:
   send_metrics:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract PR Info and Labels
+      - name: Extract PR Info
         id: pr_info
         run: |
           echo '::group::Extraindo informações do PR'
@@ -22,9 +22,13 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           DEV_EMAIL="unknown@example.com"
 
-          LABELS_JSON='${{ toJson(github.event.pull_request.labels) }}'
-          AI_TOOLS=$(echo "$LABELS_JSON" | jq -r '[.[] | select(.name=="Copilot" or .name=="Cursor" or .name=="Devin" or .name=="Não usei IA") | .name]')
-          ESCAPED_AI_TOOLS=$(echo "$AI_TOOLS" | jq -c .)
+          # Coletando os dados dos campos novos
+          IA_TOOL_USED="Copilot"  # Exemplo: Defina a ferramenta de IA (pode ser de uma lógica ou input adicional)
+          TIME_SAVED_PERCENTAGE="20%"  # Exemplo de tempo economizado
+          TIME_SAVED_REASON="Usando o Copilot, consegui acelerar a escrita do código."
+          IA_USAGE_MODE="Autocomplete"  # Exemplo de modo de uso
+          IA_USAGE_FREQUENCY="Cerca de metade do tempo"  # Exemplo de frequência
+          IA_USAGE_INVESTMENT="Resolver vulnerabilidades"  # Exemplo de onde investiu o tempo economizado
 
           if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
             MERGED_AT_JSON=null
@@ -39,7 +43,12 @@ jobs:
           echo "developer_email=$DEV_EMAIL" >> $GITHUB_OUTPUT
           echo "created_at=$CREATED_AT" >> $GITHUB_OUTPUT
           echo "merged_at=$MERGED_AT_JSON" >> $GITHUB_OUTPUT
-          echo "ai_tools=$ESCAPED_AI_TOOLS" >> $GITHUB_OUTPUT
+          echo "ia_tool_used=$IA_TOOL_USED" >> $GITHUB_OUTPUT
+          echo "time_saved_percentage=$TIME_SAVED_PERCENTAGE" >> $GITHUB_OUTPUT
+          echo "time_saved_reason=$TIME_SAVED_REASON" >> $GITHUB_OUTPUT
+          echo "ia_usage_mode=$IA_USAGE_MODE" >> $GITHUB_OUTPUT
+          echo "ia_usage_frequency=$IA_USAGE_FREQUENCY" >> $GITHUB_OUTPUT
+          echo "ia_usage_investment=$IA_USAGE_INVESTMENT" >> $GITHUB_OUTPUT
           echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
 
           echo '::endgroup::'
@@ -58,7 +67,12 @@ jobs:
           DEVELOPER_EMAIL="${{ steps.pr_info.outputs.developer_email }}"
           CREATED_AT="${{ steps.pr_info.outputs.created_at }}"
           MERGED_AT_JSON=${{ steps.pr_info.outputs.merged_at }}
-          AI_TOOLS_RAW='${{ steps.pr_info.outputs.ai_tools }}'
+          IA_TOOL_USED="${{ steps.pr_info.outputs.ia_tool_used }}"
+          TIME_SAVED_PERCENTAGE="${{ steps.pr_info.outputs.time_saved_percentage }}"
+          TIME_SAVED_REASON="${{ steps.pr_info.outputs.time_saved_reason }}"
+          IA_USAGE_MODE="${{ steps.pr_info.outputs.ia_usage_mode }}"
+          IA_USAGE_FREQUENCY="${{ steps.pr_info.outputs.ia_usage_frequency }}"
+          IA_USAGE_INVESTMENT="${{ steps.pr_info.outputs.ia_usage_investment }}"
           REPOSITORY="${{ steps.pr_info.outputs.repository }}"
 
           jq -n \
@@ -69,8 +83,13 @@ jobs:
             --arg developer_email "$DEVELOPER_EMAIL" \
             --arg created_at "$CREATED_AT" \
             --argjson merged_at "$MERGED_AT_JSON" \
+            --arg ia_tool_used "$IA_TOOL_USED" \
+            --arg time_saved_percentage "$TIME_SAVED_PERCENTAGE" \
+            --arg time_saved_reason "$TIME_SAVED_REASON" \
+            --arg ia_usage_mode "$IA_USAGE_MODE" \
+            --arg ia_usage_frequency "$IA_USAGE_FREQUENCY" \
+            --arg ia_usage_investment "$IA_USAGE_INVESTMENT" \
             --arg repository "$REPOSITORY" \
-            --argjson ai_tools "$AI_TOOLS_RAW" \
             '{
               pr_number: ($pr_number | tonumber),
               pr_title: $pr_title,
@@ -79,14 +98,19 @@ jobs:
               developer_email: $developer_email,
               created_at: $created_at,
               merged_at: $merged_at,
-              ai_tools: $ai_tools,
+              ia_tool_used: $ia_tool_used,
+              time_saved_percentage: $time_saved_percentage,
+              time_saved_reason: $time_saved_reason,
+              ia_usage_mode: $ia_usage_mode,
+              ia_usage_frequency: $ia_usage_frequency,
+              ia_usage_investment: $ia_usage_investment,
               repository: $repository
             }' > payload.json
 
           cat payload.json
 
           curl -X POST \
-            "${SUPABASE_URL}/rest/v1/pr_metrics?on_conflict=repository,pr_number" \
+            "${SUPABASE_URL}/rest/v1/pr_metrics_v2?on_conflict=repository,pr_number" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
