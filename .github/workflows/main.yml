@@ -24,33 +24,42 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           DEV_EMAIL="unknown@example.com"
 
-          # IA_TOOL_USED mapeado do PR_BODY
-          IA_TOOL_USED=$(echo "$PR_BODY" | grep -m1 '\[x\]' | sed -E 's/.*\[x\] ?//; s/^- //')
+          # === Extraindo ferramenta de IA ===
+          IA_TOOL_USED=$(echo "$PR_BODY" | awk '
+            BEGIN { found = 0 }
+            /### Ferramenta de IA utilizada/ { found = 1; next }
+            found && /^\s*-\s*\[x\]/ {
+              gsub(/.*\[x\]\s*/, "", $0);
+              if ($0 ~ /Outra \(qual\)\:/) {
+                match($0, /Outra \(qual\)\:\s*(.*)/, arr);
+                print arr[1]; exit;
+              } else {
+                print $0; exit;
+              }
+            }
+          ')
+          IA_TOOL_USED="${IA_TOOL_USED:-not_informed}"
 
-          # Outros campos de IA simulados
+          # IA - Dados simulados ou capturados de forma alternativa
           TIME_SAVED_PERCENTAGE="20%"
           TIME_SAVED_REASON="Usando o Copilot, consegui acelerar a escrita do código."
           IA_USAGE_MODE="Autocomplete"
           IA_USAGE_FREQUENCY="Cerca de metade do tempo"
           IA_USAGE_INVESTMENT="Resolver vulnerabilidades"
 
-          # Tratamento de merged_at
           if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
             MERGED_AT_JSON=null
           else
             MERGED_AT_JSON="\"$MERGED_AT\""
           fi
 
-          # Linhas adicionadas e removidas
           PR_FILES_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/files"
           PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_FILES_URL")
           ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add // 0')
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add // 0')
 
-          # Coletando data do primeiro commit
           PR_COMMITS_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/commits"
           FIRST_COMMIT_DATE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_COMMITS_URL" | jq -r '.[0].commit.committer.date')
-
           if [[ -z "$FIRST_COMMIT_DATE" || "$FIRST_COMMIT_DATE" == "null" ]]; then
             FIRST_COMMIT_DATE_JSON=null
           else
