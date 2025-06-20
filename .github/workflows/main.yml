@@ -43,6 +43,10 @@ jobs:
           ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "added") | .additions] | add')
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "removed") | .deletions] | add')
 
+          # Garantir que valores de linhas sejam tratados como null se não forem encontrados
+          ADDED_LINES=${ADDED_LINES:-null}
+          REMOVED_LINES=${REMOVED_LINES:-null}
+
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "pr_body=$PR_BODY" >> $GITHUB_OUTPUT
