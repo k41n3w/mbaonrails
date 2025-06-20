@@ -37,9 +37,15 @@ jobs:
             MERGED_AT_JSON="\"$MERGED_AT\""
           fi
 
+          # Coletando linhas adicionadas e removidas
+          PR_FILES_URL="${{ github.event.pull_request.url }}/files"
+          PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" $PR_FILES_URL)
+          ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "added") | .additions] | add')
+          REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "removed") | .deletions] | add')
+
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
-          echo "pr_body=$PR_BODY" >> $GITHUB_OUTPUT  # Incluindo o corpo do PR no output
+          echo "pr_body=$PR_BODY" >> $GITHUB_OUTPUT
           echo "pr_status=$PR_STATUS" >> $GITHUB_OUTPUT
           echo "developer_name=$DEV_NAME" >> $GITHUB_OUTPUT
           echo "developer_email=$DEV_EMAIL" >> $GITHUB_OUTPUT
@@ -51,6 +57,8 @@ jobs:
           echo "ia_usage_mode=$IA_USAGE_MODE" >> $GITHUB_OUTPUT
           echo "ia_usage_frequency=$IA_USAGE_FREQUENCY" >> $GITHUB_OUTPUT
           echo "ia_usage_investment=$IA_USAGE_INVESTMENT" >> $GITHUB_OUTPUT
+          echo "added_lines=$ADDED_LINES" >> $GITHUB_OUTPUT
+          echo "removed_lines=$REMOVED_LINES" >> $GITHUB_OUTPUT
           echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
 
           echo '::endgroup::'
@@ -76,6 +84,8 @@ jobs:
           IA_USAGE_MODE="${{ steps.pr_info.outputs.ia_usage_mode }}"
           IA_USAGE_FREQUENCY="${{ steps.pr_info.outputs.ia_usage_frequency }}"
           IA_USAGE_INVESTMENT="${{ steps.pr_info.outputs.ia_usage_investment }}"
+          ADDED_LINES="${{ steps.pr_info.outputs.added_lines }}"
+          REMOVED_LINES="${{ steps.pr_info.outputs.removed_lines }}"
           REPOSITORY="${{ steps.pr_info.outputs.repository }}"
 
           jq -n \
@@ -93,6 +103,8 @@ jobs:
             --arg ia_usage_mode "$IA_USAGE_MODE" \
             --arg ia_usage_frequency "$IA_USAGE_FREQUENCY" \
             --arg ia_usage_investment "$IA_USAGE_INVESTMENT" \
+            --arg added_lines "$ADDED_LINES" \
+            --arg removed_lines "$REMOVED_LINES" \
             --arg repository "$REPOSITORY" \
             '{
               pr_number: ($pr_number | tonumber),
@@ -109,6 +121,8 @@ jobs:
               ia_usage_mode: $ia_usage_mode,
               ia_usage_frequency: $ia_usage_frequency,
               ia_usage_investment: $ia_usage_investment,
+              added_lines: $added_lines,
+              removed_lines: $removed_lines,
               repository: $repository
             }' > payload.json
 
