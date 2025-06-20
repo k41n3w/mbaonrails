@@ -24,46 +24,46 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           DEV_EMAIL="unknown@example.com"
 
-          # === Extraindo ferramenta de IA ===
-          IA_TOOL_USED=$(echo "$PR_BODY" | awk '
-            BEGIN { found = 0 }
-            /### Ferramenta de IA utilizada/ { found = 1; next }
-            found && /^\s*-\s*\[x\]/ {
-              gsub(/.*\[x\]\s*/, "", $0);
-              if ($0 ~ /Outra \(qual\)\:/) {
-                match($0, /Outra \(qual\)\:\s*(.*)/, arr);
-                print arr[1]; exit;
-              } else {
-                print $0; exit;
-              }
-            }
-          ')
-          IA_TOOL_USED="${IA_TOOL_USED:-not_informed}"
-
-          # IA - Dados simulados ou capturados de forma alternativa
+          # IA - Dados simulados
           TIME_SAVED_PERCENTAGE="20%"
           TIME_SAVED_REASON="Usando o Copilot, consegui acelerar a escrita do código."
           IA_USAGE_MODE="Autocomplete"
           IA_USAGE_FREQUENCY="Cerca de metade do tempo"
           IA_USAGE_INVESTMENT="Resolver vulnerabilidades"
 
+          # IA Tool: analisa o pr_body
+          if echo "$PR_BODY" | grep -q '\- \[x\] Copilot'; then
+            IA_TOOL_USED="Copilot"
+          elif echo "$PR_BODY" | grep -q '\- \[x\] Cursor'; then
+            IA_TOOL_USED="Cursor"
+          elif echo "$PR_BODY" | grep -q '\- \[x\] Devin'; then
+            IA_TOOL_USED="Devin"
+          elif echo "$PR_BODY" | grep -q '\- \[x\] Nenhuma'; then
+            IA_TOOL_USED="Nenhuma"
+          elif echo "$PR_BODY" | grep -q '\- \[x\] Outra'; then
+            IA_TOOL_USED=$(echo "$PR_BODY" | grep '\- \[x\] Outra' | sed -E 's/.*Outra \(qual\)?:\s*//')
+          else
+            IA_TOOL_USED="not_informed"
+          fi
+
+          # merged_at
           if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
             MERGED_AT_JSON=null
           else
             MERGED_AT_JSON="\"$MERGED_AT\""
           fi
 
+          # Linhas adicionadas/removidas
           PR_FILES_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/files"
           PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_FILES_URL")
           ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add // 0')
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add // 0')
 
+          # Primeiro commit
           PR_COMMITS_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/commits"
           FIRST_COMMIT_DATE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_COMMITS_URL" | jq -r '.[0].commit.committer.date')
           if [[ -z "$FIRST_COMMIT_DATE" || "$FIRST_COMMIT_DATE" == "null" ]]; then
-            FIRST_COMMIT_DATE_JSON=null
-          else
-            FIRST_COMMIT_DATE_JSON="\"$FIRST_COMMIT_DATE\""
+            FIRST_COMMIT_DATE=""
           fi
 
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
@@ -83,7 +83,7 @@ jobs:
           echo "added_lines=$ADDED_LINES" >> $GITHUB_OUTPUT
           echo "removed_lines=$REMOVED_LINES" >> $GITHUB_OUTPUT
           echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
-          echo "first_commit_date=$FIRST_COMMIT_DATE_JSON" >> $GITHUB_OUTPUT
+          echo "first_commit_date=$FIRST_COMMIT_DATE" >> $GITHUB_OUTPUT
 
           echo '::endgroup::'
 
@@ -112,7 +112,7 @@ jobs:
             --argjson added_lines "${{ steps.pr_info.outputs.added_lines }}" \
             --argjson removed_lines "${{ steps.pr_info.outputs.removed_lines }}" \
             --arg repository "${{ steps.pr_info.outputs.repository }}" \
-            --argjson first_commit_date "${{ steps.pr_info.outputs.first_commit_date }}" \
+            --arg first_commit_date "${{ steps.pr_info.outputs.first_commit_date }}" \
             '{
               pr_number: ($pr_number | tonumber),
               pr_title: $pr_title,
