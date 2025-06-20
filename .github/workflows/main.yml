@@ -8,7 +8,7 @@ jobs:
   send_metrics:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract PR Info
+      - name: Extrair dados do PR
         id: pr_info
         run: |
           echo '::group::Extraindo informações do PR'
@@ -23,7 +23,6 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           DEV_EMAIL="unknown@example.com"
 
-          # Campos de IA do seu formulário/manual/inputs extras
           IA_TOOL_USED="Copilot"
           TIME_SAVED_PERCENTAGE="20%"
           TIME_SAVED_REASON="Usando o Copilot, consegui acelerar a escrita do código."
@@ -31,25 +30,25 @@ jobs:
           IA_USAGE_FREQUENCY="Cerca de metade do tempo"
           IA_USAGE_INVESTMENT="Resolver vulnerabilidades"
 
+          # Preparar merge date para JSON
           if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
             MERGED_AT_JSON=null
           else
             MERGED_AT_JSON="\"$MERGED_AT\""
           fi
 
-          # Busca dados de linhas adicionadas/removidas no diff do PR
-          PR_FILES_URL="${{ github.event.pull_request.url }}/files"
-          PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" $PR_FILES_URL)
+          # Coleta de linhas adicionadas/removidas
+          PR_FILES_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/files"
+          PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_FILES_URL")
+          ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add // 0')
+          REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add // 0')
 
-          ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add')
-          REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add')
-
-          # Corrige para 0 se não houver resultado numérico
-          if [[ -z "$ADDED_LINES" || "$ADDED_LINES" == "null" ]]; then
-            ADDED_LINES=0
-          fi
-          if [[ -z "$REMOVED_LINES" || "$REMOVED_LINES" == "null" ]]; then
-            REMOVED_LINES=0
+          # Coleta da data do primeiro commit
+          COMMITS_URL="${{ github.event.pull_request._links.commits.href }}"
+          COMMITS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$COMMITS_URL")
+          FIRST_COMMIT_DATE=$(echo "$COMMITS_JSON" | jq -r '.[0].commit.author.date // empty')
+          if [[ -z "$FIRST_COMMIT_DATE" ]]; then
+            FIRST_COMMIT_DATE=null
           fi
 
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
@@ -68,53 +67,37 @@ jobs:
           echo "ia_usage_investment=$IA_USAGE_INVESTMENT" >> $GITHUB_OUTPUT
           echo "added_lines=$ADDED_LINES" >> $GITHUB_OUTPUT
           echo "removed_lines=$REMOVED_LINES" >> $GITHUB_OUTPUT
+          echo "first_commit_date=$FIRST_COMMIT_DATE" >> $GITHUB_OUTPUT
           echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
 
           echo '::endgroup::'
 
-      - name: Send Data to Supabase
+      - name: Enviar dados ao Supabase
         env:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo '::group::Enviando dados ao Supabase'
 
-          PR_NUMBER=${{ steps.pr_info.outputs.pr_number }}
-          PR_TITLE="${{ steps.pr_info.outputs.pr_title }}"
-          PR_BODY="${{ steps.pr_info.outputs.pr_body }}"
-          PR_STATUS="${{ steps.pr_info.outputs.pr_status }}"
-          DEVELOPER_NAME="${{ steps.pr_info.outputs.developer_name }}"
-          DEVELOPER_EMAIL="${{ steps.pr_info.outputs.developer_email }}"
-          CREATED_AT="${{ steps.pr_info.outputs.created_at }}"
-          MERGED_AT_JSON=${{ steps.pr_info.outputs.merged_at }}
-          IA_TOOL_USED="${{ steps.pr_info.outputs.ia_tool_used }}"
-          TIME_SAVED_PERCENTAGE="${{ steps.pr_info.outputs.time_saved_percentage }}"
-          TIME_SAVED_REASON="${{ steps.pr_info.outputs.time_saved_reason }}"
-          IA_USAGE_MODE="${{ steps.pr_info.outputs.ia_usage_mode }}"
-          IA_USAGE_FREQUENCY="${{ steps.pr_info.outputs.ia_usage_frequency }}"
-          IA_USAGE_INVESTMENT="${{ steps.pr_info.outputs.ia_usage_investment }}"
-          ADDED_LINES=${{ steps.pr_info.outputs.added_lines }}
-          REMOVED_LINES=${{ steps.pr_info.outputs.removed_lines }}
-          REPOSITORY="${{ steps.pr_info.outputs.repository }}"
-
           jq -n \
-            --arg pr_number "$PR_NUMBER" \
-            --arg pr_title "$PR_TITLE" \
-            --arg pr_body "$PR_BODY" \
-            --arg pr_status "$PR_STATUS" \
-            --arg developer_name "$DEVELOPER_NAME" \
-            --arg developer_email "$DEVELOPER_EMAIL" \
-            --arg created_at "$CREATED_AT" \
-            --argjson merged_at "$MERGED_AT_JSON" \
-            --arg ia_tool_used "$IA_TOOL_USED" \
-            --arg time_saved_percentage "$TIME_SAVED_PERCENTAGE" \
-            --arg time_saved_reason "$TIME_SAVED_REASON" \
-            --arg ia_usage_mode "$IA_USAGE_MODE" \
-            --arg ia_usage_frequency "$IA_USAGE_FREQUENCY" \
-            --arg ia_usage_investment "$IA_USAGE_INVESTMENT" \
-            --argjson added_lines "$ADDED_LINES" \
-            --argjson removed_lines "$REMOVED_LINES" \
-            --arg repository "$REPOSITORY" \
+            --arg pr_number "${{ steps.pr_info.outputs.pr_number }}" \
+            --arg pr_title "${{ steps.pr_info.outputs.pr_title }}" \
+            --arg pr_body "${{ steps.pr_info.outputs.pr_body }}" \
+            --arg pr_status "${{ steps.pr_info.outputs.pr_status }}" \
+            --arg developer_name "${{ steps.pr_info.outputs.developer_name }}" \
+            --arg developer_email "${{ steps.pr_info.outputs.developer_email }}" \
+            --arg created_at "${{ steps.pr_info.outputs.created_at }}" \
+            --argjson merged_at "${{ steps.pr_info.outputs.merged_at }}" \
+            --arg ia_tool_used "${{ steps.pr_info.outputs.ia_tool_used }}" \
+            --arg time_saved_percentage "${{ steps.pr_info.outputs.time_saved_percentage }}" \
+            --arg time_saved_reason "${{ steps.pr_info.outputs.time_saved_reason }}" \
+            --arg ia_usage_mode "${{ steps.pr_info.outputs.ia_usage_mode }}" \
+            --arg ia_usage_frequency "${{ steps.pr_info.outputs.ia_usage_frequency }}" \
+            --arg ia_usage_investment "${{ steps.pr_info.outputs.ia_usage_investment }}" \
+            --argjson added_lines "${{ steps.pr_info.outputs.added_lines }}" \
+            --argjson removed_lines "${{ steps.pr_info.outputs.removed_lines }}" \
+            --arg repository "${{ steps.pr_info.outputs.repository }}" \
+            --arg first_commit_date "${{ steps.pr_info.outputs.first_commit_date }}" \
             '{
               pr_number: ($pr_number | tonumber),
               pr_title: $pr_title,
@@ -132,7 +115,8 @@ jobs:
               ia_usage_investment: $ia_usage_investment,
               added_lines: $added_lines,
               removed_lines: $removed_lines,
-              repository: $repository
+              repository: $repository,
+              first_commit_date: ($first_commit_date == "null" ? null : $first_commit_date)
             }' > payload.json
 
           cat payload.json
