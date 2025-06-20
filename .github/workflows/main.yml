@@ -2,7 +2,7 @@ name: PR AI Usage Metrics
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, closed, labeled, unlabeled]
+    types: [opened, reopened, synchronize, closed]
 
 jobs:
   send_metrics:
@@ -44,43 +44,48 @@ jobs:
             IA_TOOL_USED="not_informed"
           fi
 
-          if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
-            MERGED_AT_JSON=null
-          else
-            MERGED_AT_JSON="\"$MERGED_AT\""
-          fi
-
+          # Linhas adicionadas/removidas
           PR_FILES_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/files"
           PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_FILES_URL")
           ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add // 0')
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add // 0')
 
+          # Primeiro commit
           PR_COMMITS_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/commits"
           FIRST_COMMIT_DATE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_COMMITS_URL" | jq -r '.[0].commit.committer.date')
-          if [[ -z "$FIRST_COMMIT_DATE" || "$FIRST_COMMIT_DATE" == "null" ]]; then
-            FIRST_COMMIT_DATE=""
+
+          # Normalizando valores
+          if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
+            MERGED_AT_JSON="null"
+          else
+            MERGED_AT_JSON="\"$MERGED_AT\""
           fi
 
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-          echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
-          echo "pr_body<<EOF" >> $GITHUB_OUTPUT
-          echo "$PR_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "pr_status=$PR_STATUS" >> $GITHUB_OUTPUT
-          echo "developer_name=$DEV_NAME" >> $GITHUB_OUTPUT
-          echo "developer_email=$DEV_EMAIL" >> $GITHUB_OUTPUT
-          echo "created_at=$CREATED_AT" >> $GITHUB_OUTPUT
-          echo "merged_at=$MERGED_AT_JSON" >> $GITHUB_OUTPUT
-          echo "ia_tool_used=$IA_TOOL_USED" >> $GITHUB_OUTPUT
-          echo "time_saved_percentage=$TIME_SAVED_PERCENTAGE" >> $GITHUB_OUTPUT
-          echo "time_saved_reason=$TIME_SAVED_REASON" >> $GITHUB_OUTPUT
-          echo "ia_usage_mode=$IA_USAGE_MODE" >> $GITHUB_OUTPUT
-          echo "ia_usage_frequency=$IA_USAGE_FREQUENCY" >> $GITHUB_OUTPUT
-          echo "ia_usage_investment=$IA_USAGE_INVESTMENT" >> $GITHUB_OUTPUT
-          echo "added_lines=$ADDED_LINES" >> $GITHUB_OUTPUT
-          echo "removed_lines=$REMOVED_LINES" >> $GITHUB_OUTPUT
-          echo "repository=$REPO_NAME" >> $GITHUB_OUTPUT
-          echo "first_commit_date=$FIRST_COMMIT_DATE" >> $GITHUB_OUTPUT
+          if [[ -z "$FIRST_COMMIT_DATE" || "$FIRST_COMMIT_DATE" == "null" ]]; then
+            FIRST_COMMIT_DATE_JSON="null"
+          else
+            FIRST_COMMIT_DATE_JSON="\"$FIRST_COMMIT_DATE\""
+          fi
+
+          echo "$PR_BODY" > body.txt
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_ENV
+          echo "pr_title=$PR_TITLE" >> $GITHUB_ENV
+          echo "pr_status=$PR_STATUS" >> $GITHUB_ENV
+          echo "developer_name=$DEV_NAME" >> $GITHUB_ENV
+          echo "developer_email=$DEV_EMAIL" >> $GITHUB_ENV
+          echo "created_at=$CREATED_AT" >> $GITHUB_ENV
+          echo "merged_at_json=$MERGED_AT_JSON" >> $GITHUB_ENV
+          echo "ia_tool_used=$IA_TOOL_USED" >> $GITHUB_ENV
+          echo "time_saved_percentage=$TIME_SAVED_PERCENTAGE" >> $GITHUB_ENV
+          echo "time_saved_reason=$TIME_SAVED_REASON" >> $GITHUB_ENV
+          echo "ia_usage_mode=$IA_USAGE_MODE" >> $GITHUB_ENV
+          echo "ia_usage_frequency=$IA_USAGE_FREQUENCY" >> $GITHUB_ENV
+          echo "ia_usage_investment=$IA_USAGE_INVESTMENT" >> $GITHUB_ENV
+          echo "added_lines=$ADDED_LINES" >> $GITHUB_ENV
+          echo "removed_lines=$REMOVED_LINES" >> $GITHUB_ENV
+          echo "repository=$REPO_NAME" >> $GITHUB_ENV
+          echo "first_commit_date_json=$FIRST_COMMIT_DATE_JSON" >> $GITHUB_ENV
 
           echo '::endgroup::'
 
@@ -92,33 +97,33 @@ jobs:
           echo '::group::Enviando dados ao Supabase'
 
           jq -n \
-            --arg pr_number "${{ steps.pr_info.outputs.pr_number }}" \
-            --arg pr_title "${{ steps.pr_info.outputs.pr_title }}" \
-            --arg pr_body "${{ steps.pr_info.outputs.pr_body }}" \
-            --arg pr_status "${{ steps.pr_info.outputs.pr_status }}" \
-            --arg developer_name "${{ steps.pr_info.outputs.developer_name }}" \
-            --arg developer_email "${{ steps.pr_info.outputs.developer_email }}" \
-            --arg created_at "${{ steps.pr_info.outputs.created_at }}" \
-            --arg ia_tool_used "${{ steps.pr_info.outputs.ia_tool_used }}" \
-            --arg time_saved_percentage "${{ steps.pr_info.outputs.time_saved_percentage }}" \
-            --arg time_saved_reason "${{ steps.pr_info.outputs.time_saved_reason }}" \
-            --arg ia_usage_mode "${{ steps.pr_info.outputs.ia_usage_mode }}" \
-            --arg ia_usage_frequency "${{ steps.pr_info.outputs.ia_usage_frequency }}" \
-            --arg ia_usage_investment "${{ steps.pr_info.outputs.ia_usage_investment }}" \
-            --arg added_lines "${{ steps.pr_info.outputs.added_lines }}" \
-            --arg removed_lines "${{ steps.pr_info.outputs.removed_lines }}" \
-            --arg repository "${{ steps.pr_info.outputs.repository }}" \
-            --arg merged_at_raw "${{ steps.pr_info.outputs.merged_at }}" \
-            --arg first_commit_date "${{ steps.pr_info.outputs.first_commit_date }}" \
+            --arg pr_number "$pr_number" \
+            --arg pr_title "$pr_title" \
+            --slurpfile pr_body body.txt \
+            --arg pr_status "$pr_status" \
+            --arg developer_name "$developer_name" \
+            --arg developer_email "$developer_email" \
+            --arg created_at "$created_at" \
+            --arg ia_tool_used "$ia_tool_used" \
+            --arg time_saved_percentage "$time_saved_percentage" \
+            --arg time_saved_reason "$time_saved_reason" \
+            --arg ia_usage_mode "$ia_usage_mode" \
+            --arg ia_usage_frequency "$ia_usage_frequency" \
+            --arg ia_usage_investment "$ia_usage_investment" \
+            --arg added_lines "$added_lines" \
+            --arg removed_lines "$removed_lines" \
+            --arg repository "$repository" \
+            --arg merged_at "$merged_at_json" \
+            --arg first_commit_date "$first_commit_date_json" \
             '{
               pr_number: ($pr_number | tonumber),
               pr_title: $pr_title,
-              pr_body: $pr_body,
+              pr_body: $pr_body[0],
               pr_status: $pr_status,
               developer_name: $developer_name,
               developer_email: $developer_email,
               created_at: $created_at,
-              merged_at: ($merged_at_raw | fromjson),
+              merged_at: ($merged_at | fromjson),
               ia_tool_used: $ia_tool_used,
               time_saved_percentage: $time_saved_percentage,
               time_saved_reason: $time_saved_reason,
@@ -128,7 +133,7 @@ jobs:
               added_lines: ($added_lines | tonumber),
               removed_lines: ($removed_lines | tonumber),
               repository: $repository,
-              first_commit_date: ($first_commit_date == "" or $first_commit_date == "null" ? null : $first_commit_date)
+              first_commit_date: ($first_commit_date | fromjson)
             }' > payload.json
 
           cat payload.json
