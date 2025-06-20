@@ -104,7 +104,7 @@ jobs:
               developer_name: $developer_name,
               developer_email: $developer_email,
               created_at: $created_at,
-              merged_at: ($merged_at == "null" ? null : $merged_at),
+              merged_at: (if $merged_at == "null" or $merged_at == "" then null else $merged_at end),
               ia_tool_used: $ia_tool_used,
               time_saved_percentage: $time_saved_percentage,
               time_saved_reason: $time_saved_reason,
