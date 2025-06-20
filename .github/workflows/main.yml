@@ -24,7 +24,7 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           DEV_EMAIL="unknown@example.com"
 
-          # IA - Dados simulados
+          # IA - Dados simulados ou capturados de forma alternativa
           IA_TOOL_USED="Copilot"
           TIME_SAVED_PERCENTAGE="20%"
           TIME_SAVED_REASON="Usando o Copilot, consegui acelerar a escrita do código."
@@ -32,20 +32,13 @@ jobs:
           IA_USAGE_FREQUENCY="Cerca de metade do tempo"
           IA_USAGE_INVESTMENT="Resolver vulnerabilidades"
 
-          # merged_at tratado
-          if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
-            MERGED_AT_JSON=null
-          else
-            MERGED_AT_JSON="\"$MERGED_AT\""
-          fi
-
-          # Linhas
+          # Linhas adicionadas e removidas
           PR_FILES_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/files"
           PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_FILES_URL")
           ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add // 0')
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add // 0')
 
-          # Primeiro commit
+          # Coletando data do primeiro commit
           PR_COMMITS_URL="https://api.github.com/repos/${REPO_NAME}/pulls/${PR_NUMBER}/commits"
           FIRST_COMMIT_DATE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$PR_COMMITS_URL" | jq -r '.[0].commit.committer.date')
 
@@ -56,7 +49,7 @@ jobs:
           echo "developer_name=$DEV_NAME" >> $GITHUB_OUTPUT
           echo "developer_email=$DEV_EMAIL" >> $GITHUB_OUTPUT
           echo "created_at=$CREATED_AT" >> $GITHUB_OUTPUT
-          echo "merged_at=$MERGED_AT_JSON" >> $GITHUB_OUTPUT
+          echo "merged_at=$MERGED_AT" >> $GITHUB_OUTPUT
           echo "ia_tool_used=$IA_TOOL_USED" >> $GITHUB_OUTPUT
           echo "time_saved_percentage=$TIME_SAVED_PERCENTAGE" >> $GITHUB_OUTPUT
           echo "time_saved_reason=$TIME_SAVED_REASON" >> $GITHUB_OUTPUT
@@ -114,7 +107,7 @@ jobs:
               added_lines: ($added_lines | tonumber),
               removed_lines: ($removed_lines | tonumber),
               repository: $repository,
-              first_commit_date: ($first_commit_date == "null" or $first_commit_date == "" ? null : $first_commit_date)
+              first_commit_date: (if $first_commit_date == "null" or $first_commit_date == "" then null else $first_commit_date end)
             }' > payload.json
 
           cat payload.json
