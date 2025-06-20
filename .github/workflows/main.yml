@@ -2,7 +2,7 @@ name: PR AI Usage Metrics
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, closed, label, unlabeled]
+    types: [opened, reopened, synchronize, closed, labeled, unlabeled]
 
 jobs:
   send_metrics:
