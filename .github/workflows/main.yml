@@ -47,6 +47,11 @@ jobs:
           ADDED_LINES=$(echo "$ADDED_LINES" | awk '{if ($1 == "") print "0"; else print $1}')
           REMOVED_LINES=$(echo "$REMOVED_LINES" | awk '{if ($1 == "") print "0"; else print $1}')
 
+          # Se o valor de REMOVED_LINES for 0, substituímos por '0', caso contrário deixamos como está
+          if [[ "$REMOVED_LINES" == "0" ]]; then
+            REMOVED_LINES=0
+          fi
+
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "pr_body=$PR_BODY" >> $GITHUB_OUTPUT
