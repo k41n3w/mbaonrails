@@ -44,6 +44,7 @@ jobs:
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "removed") | .deletions] | add')
 
           # Garantir que valores de linhas sejam tratados como null se não forem encontrados
+          # Se não houver valor para linhas, atribuímos 'null' de maneira adequada
           ADDED_LINES=${ADDED_LINES:-null}
           REMOVED_LINES=${REMOVED_LINES:-null}
 
