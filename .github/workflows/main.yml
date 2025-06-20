@@ -15,7 +15,7 @@ jobs:
 
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY="${{ github.event.pull_request.body }}"  # Adicionando a extração do corpo do PR
+          PR_BODY="${{ github.event.pull_request.body }}"
           PR_STATUS="${{ github.event.pull_request.state }}"
           DEV_NAME="${{ github.event.pull_request.user.login }}"
           CREATED_AT="${{ github.event.pull_request.created_at }}"
@@ -23,13 +23,13 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           DEV_EMAIL="unknown@example.com"
 
-          # Coletando os dados dos campos novos
-          IA_TOOL_USED="Copilot"  # Exemplo: Defina a ferramenta de IA (pode ser de uma lógica ou input adicional)
-          TIME_SAVED_PERCENTAGE="20%"  # Exemplo de tempo economizado
+          # Campos de IA do seu formulário/manual/inputs extras
+          IA_TOOL_USED="Copilot"
+          TIME_SAVED_PERCENTAGE="20%"
           TIME_SAVED_REASON="Usando o Copilot, consegui acelerar a escrita do código."
-          IA_USAGE_MODE="Autocomplete"  # Exemplo de modo de uso
-          IA_USAGE_FREQUENCY="Cerca de metade do tempo"  # Exemplo de frequência
-          IA_USAGE_INVESTMENT="Resolver vulnerabilidades"  # Exemplo de onde investiu o tempo economizado
+          IA_USAGE_MODE="Autocomplete"
+          IA_USAGE_FREQUENCY="Cerca de metade do tempo"
+          IA_USAGE_INVESTMENT="Resolver vulnerabilidades"
 
           if [[ -z "$MERGED_AT" || "$MERGED_AT" == "null" ]]; then
             MERGED_AT_JSON=null
@@ -37,19 +37,19 @@ jobs:
             MERGED_AT_JSON="\"$MERGED_AT\""
           fi
 
-          # Coletando linhas adicionadas e removidas
+          # Busca dados de linhas adicionadas/removidas no diff do PR
           PR_FILES_URL="${{ github.event.pull_request.url }}/files"
           PR_FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" $PR_FILES_URL)
-          ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "added") | .additions] | add')
-          REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "removed") | .deletions] | add')
 
-          # Garantir que valores de linhas sejam tratados como null (não string 'null') ou 0 se não forem encontrados
+          ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .additions] | add')
+          REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | .deletions] | add')
+
+          # Corrige para 0 se não houver resultado numérico
           if [[ -z "$ADDED_LINES" || "$ADDED_LINES" == "null" ]]; then
-            ADDED_LINES=null
+            ADDED_LINES=0
           fi
-
           if [[ -z "$REMOVED_LINES" || "$REMOVED_LINES" == "null" ]]; then
-            REMOVED_LINES=null
+            REMOVED_LINES=0
           fi
 
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
@@ -81,7 +81,7 @@ jobs:
 
           PR_NUMBER=${{ steps.pr_info.outputs.pr_number }}
           PR_TITLE="${{ steps.pr_info.outputs.pr_title }}"
-          PR_BODY="${{ steps.pr_info.outputs.pr_body }}"  # Adicionando o corpo do PR
+          PR_BODY="${{ steps.pr_info.outputs.pr_body }}"
           PR_STATUS="${{ steps.pr_info.outputs.pr_status }}"
           DEVELOPER_NAME="${{ steps.pr_info.outputs.developer_name }}"
           DEVELOPER_EMAIL="${{ steps.pr_info.outputs.developer_email }}"
@@ -93,8 +93,8 @@ jobs:
           IA_USAGE_MODE="${{ steps.pr_info.outputs.ia_usage_mode }}"
           IA_USAGE_FREQUENCY="${{ steps.pr_info.outputs.ia_usage_frequency }}"
           IA_USAGE_INVESTMENT="${{ steps.pr_info.outputs.ia_usage_investment }}"
-          ADDED_LINES="${{ steps.pr_info.outputs.added_lines }}"
-          REMOVED_LINES="${{ steps.pr_info.outputs.removed_lines }}"
+          ADDED_LINES=${{ steps.pr_info.outputs.added_lines }}
+          REMOVED_LINES=${{ steps.pr_info.outputs.removed_lines }}
           REPOSITORY="${{ steps.pr_info.outputs.repository }}"
 
           jq -n \
@@ -112,8 +112,8 @@ jobs:
             --arg ia_usage_mode "$IA_USAGE_MODE" \
             --arg ia_usage_frequency "$IA_USAGE_FREQUENCY" \
             --arg ia_usage_investment "$IA_USAGE_INVESTMENT" \
-            --arg added_lines "$ADDED_LINES" \
-            --arg removed_lines "$REMOVED_LINES" \
+            --argjson added_lines "$ADDED_LINES" \
+            --argjson removed_lines "$REMOVED_LINES" \
             --arg repository "$REPOSITORY" \
             '{
               pr_number: ($pr_number | tonumber),
