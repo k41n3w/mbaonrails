@@ -43,16 +43,12 @@ jobs:
           ADDED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "added") | .additions] | add')
           REMOVED_LINES=$(echo "$PR_FILES_JSON" | jq '[.[] | select(.status == "removed") | .deletions] | add')
 
-          # Garantir que valores de linhas sejam tratados como 0 ou null se não forem encontrados
-          ADDED_LINES=$(echo "$ADDED_LINES" | awk '{if ($1 == "") print "null"; else print $1}')
-          REMOVED_LINES=$(echo "$REMOVED_LINES" | awk '{if ($1 == "") print "null"; else print $1}')
-
-          # Corrigindo para garantir que o valor enviado seja `null` real, não a string `"null"`
-          if [[ "$ADDED_LINES" == "null" ]]; then
+          # Garantir que valores de linhas sejam tratados como null (não string 'null') ou 0 se não forem encontrados
+          if [[ -z "$ADDED_LINES" || "$ADDED_LINES" == "null" ]]; then
             ADDED_LINES=null
           fi
 
-          if [[ "$REMOVED_LINES" == "null" ]]; then
+          if [[ -z "$REMOVED_LINES" || "$REMOVED_LINES" == "null" ]]; then
             REMOVED_LINES=null
           fi
 
