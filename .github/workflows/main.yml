@@ -1,13 +1,16 @@
 name: Enviar métricas de PR com IA
 
 on:
-  push:            # Vai rodar a cada commit em qualquer branch
   pull_request:
     types: [opened, reopened, synchronize, closed, labeled, unlabeled]
 
 jobs:
   enviar-metricas:
     runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
       - name: Checkout
@@ -28,6 +31,7 @@ jobs:
           developer_name="${{ github.actor }}"
           developer_email="unknown@example.com"
 
+          # Detectar ferramenta de IA
           if echo "$pr_body" | grep -q '\- \[x\] Copilot'; then
             ia_tool_used="Copilot"
           elif echo "$pr_body" | grep -q '\- \[x\] Cursor'; then
@@ -42,22 +46,26 @@ jobs:
             ia_tool_used="not_informed"
           fi
 
+          # Dados simulados
           time_saved_percentage="20%"
           time_saved_reason="Usando o Copilot, consegui acelerar a escrita do código."
           ia_usage_mode="Autocomplete"
           ia_usage_frequency="Cerca de metade do tempo"
           ia_usage_investment="Resolver vulnerabilidades"
 
+          # Linhas adicionadas/removidas
           pr_files_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/files"
           pr_files_json=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_files_url")
           added_lines=$(echo "$pr_files_json" | jq '[.[] | .additions] | add // 0')
           removed_lines=$(echo "$pr_files_json" | jq '[.[] | .deletions] | add // 0')
 
+          # Primeiro commit
           pr_commits_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/commits"
           first_commit_date=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_commits_url" | jq -r '.[0].commit.committer.date')
 
           echo "$pr_body" | jq -Rs '.' > body.txt
 
+          # Tratar campos nulos
           merged_at_json="${merged_at:-null}"
           if [[ "$merged_at_json" != "null" ]]; then
             merged_at_json="\"$merged_at_json\""
@@ -90,12 +98,7 @@ jobs:
           echo '::endgroup::'
 
       - name: Enviar dados ao Supabase
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "SUPABASE_URL: $SUPABASE_URL"
-          echo "SUPABASE_SERVICE_ROLE_KEY: ${#SUPABASE_SERVICE_ROLE_KEY}"
           echo '::group::Enviando dados ao Supabase'
 
           jq -n \
@@ -138,7 +141,13 @@ jobs:
               first_commit_date: ($first_commit_date_raw | fromjson)
             }' > payload.json
 
+          echo "Payload final:"
           cat payload.json
+
+          if [[ -z "$SUPABASE_URL" ]]; then
+            echo "::error::SUPABASE_URL está vazio. Verifique seus secrets."
+            exit 1
+          fi
 
           curl -X POST \
             "$SUPABASE_URL/rest/v1/pr_metrics_v2?on_conflict=repository,pr_number" \
