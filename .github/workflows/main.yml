@@ -16,19 +16,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      #################################################################
-      # 1) Extrair dados do PR (tolerante a formulário vazio)
-      #################################################################
       - name: Extrair informações do PR
         id: extrair
-        shell: bash
         run: |
-          set -Eeuo pipefail
           echo '::group::Extraindo informações do PR'
 
           pr_number="${{ github.event.pull_request.number }}"
           pr_title="${{ github.event.pull_request.title }}"
-          pr_body="${{ github.event.pull_request.body || '' }}"
+          pr_body="${{ github.event.pull_request.body }}"
           pr_status="${{ github.event.pull_request.state }}"
           created_at="${{ github.event.pull_request.created_at }}"
           merged_at="${{ github.event.pull_request.merged_at }}"
@@ -36,9 +31,7 @@ jobs:
           developer_name="${{ github.actor }}"
           developer_email="unknown@example.com"
 
-          ##########################
-          # Ferramenta de IA (única)
-          ##########################
+          # Detectar ferramenta de IA
           shopt -s nocasematch
           if echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Copilot'; then
             ia_tool_used="Copilot"
@@ -56,76 +49,54 @@ jobs:
           fi
           shopt -u nocasematch
 
-          ##########################
-          # Cenários (múltiplos)
-          ##########################
-          declare -A map=(
+          # Cenários de uso da IA
+          declare -A scenario_map=(
             ["Geração de código boilerplate"]="boilerplate"
             ["Explicação de trechos de código"]="explain_code"
             ["Sugestões de melhorias/refatoração"]="refactor_suggestions"
           )
           scenarios=()
-          for pretty in "${!map[@]}"; do
+          for pretty in "${!scenario_map[@]}"; do
             if echo "$pr_body" | grep -iqP "\-\s*\[x\]\s*${pretty}"; then
-              scenarios+=("${map[$pretty]}")
+              scenarios+=("${scenario_map[$pretty]}")
             fi
           done
-          ia_usage_scenarios=$(IFS=','; echo "${scenarios[*]}")
-          [[ -z "$ia_usage_scenarios" ]] && ia_usage_scenarios="none"
-
-          ##########################
-          # Nota de produtividade
-          ##########################
-          raw_num=$(echo "$pr_body" \
-              | grep -iPo 'Produtividade[^\n]*' \
-              | grep -oP '[0-9]{1,2}' \
-              | head -1 || true)
-          # remover espaços/quebras
-          raw_num="${raw_num//[$'\t\r\n ']/}"
-          if [[ "$raw_num" =~ ^[0-9]+$ ]] && (( raw_num <= 10 )); then
-            productivity_score="$raw_num"
+          if [ ${#scenarios[@]} -eq 0 ]; then
+            ia_usage_scenarios="none"
           else
+            IFS=',' ia_usage_scenarios="${scenarios[*]}"
+          fi
+
+          # Nota de produtividade
+          productivity_score=$(echo "$pr_body" | grep -oP '(?i)\*\*?Produtividade\s*\(0-10\):\*\*?\s*([0-9]{1,2})' | grep -oP '[0-9]{1,2}' | tail -1)
+          if [[ -z "$productivity_score" || $productivity_score -gt 10 ]]; then
             productivity_score="null"
           fi
 
-          ##########################
           # Justificativa
-          ##########################
           productivity_reason=$(echo "$pr_body" | awk '
             BEGIN{flag=0}
-            /###[[:space:]]*💬/{flag=1;next}
+            /###[[:space:]]*\xf0\x9f\x92\xac/{flag=1; next}
             /^---/{flag=0}
-            flag {gsub(/^[> ]+/,""); printf "%s ",$0}
-          ' | sed 's/  */ /g' | sed 's/\"/\\"/g' )
+            flag {gsub(/^[> ]+/," "); printf "%s\\n",$0}
+          ' | sed ':a;N;$!ba;s/\n/ /g' | sed 's/  */ /g' | sed 's/\"/\\\"/g')
           [[ -z "$productivity_reason" ]] && productivity_reason=""
 
-          ##########################
-          # Linhas adicionadas/removidas
-          ##########################
           pr_files_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/files"
           pr_files_json=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_files_url")
           added_lines=$(echo "$pr_files_json" | jq '[.[] | .additions] | add // 0')
           removed_lines=$(echo "$pr_files_json" | jq '[.[] | .deletions] | add // 0')
 
-          ##########################
-          # Primeiro commit
-          ##########################
           pr_commits_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/commits"
-          first_commit_date=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_commits_url" | jq -r '.[0].commit.committer.date // empty')
+          first_commit_date=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_commits_url" | jq -r '.[0].commit.committer.date')
 
-          ##########################
-          # Sanitizar corpo p/ JSON
-          ##########################
-          printf '%s' "$pr_body" | jq -Rs '.' > body.txt
+          echo "$pr_body" | jq -Rs '.' > body.txt
 
           merged_at_json="${merged_at:-null}"
-          [[ -n "$merged_at_json" && "$merged_at_json" != "null" ]] && merged_at_json="\"$merged_at_json\""
+          [[ "$merged_at_json" != "null" ]] && merged_at_json="\"$merged_at_json\""
           first_commit_date_json="${first_commit_date:-null}"
-          [[ -n "$first_commit_date_json" && "$first_commit_date_json" != "null" ]] && first_commit_date_json="\"$first_commit_date_json\""
+          [[ "$first_commit_date_json" != "null" ]] && first_commit_date_json="\"$first_commit_date_json\""
 
-          ##########################
-          # Exportar envs (1 linha)
-          ##########################
           {
             echo "pr_number=$pr_number"
             echo "pr_title=$pr_title"
@@ -142,17 +113,12 @@ jobs:
             echo "removed_lines=$removed_lines"
             echo "repository=$repository"
             echo "first_commit_date_json=$first_commit_date_json"
-          } >> "$GITHUB_ENV"
+          } >> $GITHUB_ENV
 
           echo '::endgroup::'
 
-      #################################################################
-      # 2) Enviar para Supabase
-      #################################################################
       - name: Enviar dados ao Supabase
-        shell: bash
         run: |
-          set -Eeuo pipefail
           echo '::group::Enviando dados ao Supabase'
 
           jq -n \
@@ -191,6 +157,7 @@ jobs:
               first_commit_date: ($first_commit_date_raw | fromjson)
             }' > payload.json
 
+          echo "Payload final:"
           cat payload.json
 
           curl -X POST \
