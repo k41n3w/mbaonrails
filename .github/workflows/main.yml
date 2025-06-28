@@ -38,17 +38,17 @@ jobs:
 
           # ▸ Ferramenta de IA
           shopt -s nocasematch
-          if echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Copilot';      then ia_tool_used="Copilot"
-          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Cursor';     then ia_tool_used="Cursor"
-          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Devin';      then ia_tool_used="Devin"
-          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Nenhuma';    then ia_tool_used="Nenhuma"
-          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Outra';      then
-               ia_tool_used=$(echo "$pr_body" | grep -iP '\-\s*\[x\]\s*Outra' | sed -E 's/.*Outra[^:]*:\s*//I')
-               [[ -z "$ia_tool_used" ]] && ia_tool_used="Outra"
+          if echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Copilot'; then ia_tool_used="Copilot"
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Cursor'; then ia_tool_used="Cursor"
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Devin'; then ia_tool_used="Devin"
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Nenhuma'; then ia_tool_used="Nenhuma"
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Outra'; then
+            ia_tool_used=$(echo "$pr_body" | grep -iP '\-\s*\[x\]\s*Outra' | sed -E 's/.*Outra[^:]*:\s*//I')
+            [[ -z "$ia_tool_used" ]] && ia_tool_used="Outra"
           else ia_tool_used="not_informed"; fi
           shopt -u nocasematch
 
-          # ▸ Cenários de uso (múltiplos)
+          # ▸ Cenários de uso
           declare -A map=(
             ["Geração de código boilerplate"]="boilerplate"
             ["Explicação de trechos de código"]="explain_code"
@@ -60,19 +60,21 @@ jobs:
           done
           ia_usage_scenarios=$(IFS=','; echo "${scenarios[*]}"); [[ -z "$ia_usage_scenarios" ]] && ia_usage_scenarios="none"
 
-          # ▸ Nota de produtividade 0-10 (usa Perl lookbehind)
+          # ▸ Nota de produtividade 0-10
           productivity_score=$(echo "$pr_body" | perl -ne 'if (/Produtividade\s*\(0-10\).*?([0-9]{1,2})/i){print $1; exit}')
           [[ -z "$productivity_score" || "$productivity_score" -gt 10 ]] && productivity_score="null"
 
-          # ▸ Justificativa da nota (entre título e <!-- Fim do formulário -->)
-          productivity_reason=$(echo "$pr_body" | awk '
-            BEGIN{flag=0}
-            /### +[Jj]ustificativa da nota/{flag=1; next}
-            /<!-- *Fim do formulário/{flag=0}
-            flag && !/^[>]/ && !/^\*/ && !/^---/ {
-              gsub(/^[[:space:]]+|[[:space:]]+$/,""); printf "%s ", $0
-            }
-          ' | sed 's/  */ /g; s/"/\\"/g' | xargs)
+          # ▸ Justificativa da nota – Perl multiline
+          productivity_reason=$(echo "$pr_body" | perl -0777 -ne '
+            if (/###\s+.*Justificativa da nota.*?\n(.*?)<!--\s*Fim do formulário/si) {
+              $txt=$1;
+              $txt =~ s/^\s*>.*\n?//gm;    # remove linhas começadas por >
+              $txt =~ s/^\s*\*.*\n?//gm;   # remove instruções *
+              $txt =~ s/^\s+|\s+$//g;      # trim
+              $txt =~ s/\n/ /g;            # tudo em uma linha
+              $txt =~ s/ {2,}/ /g;         # espaço duplicado
+              print $txt;
+            }')
           [[ -z "$productivity_reason" ]] && productivity_reason=""
 
           # ▸ Linhas adicionadas/removidas
@@ -85,13 +87,12 @@ jobs:
           pr_commits_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/commits"
           first_commit_date=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_commits_url" | jq -r '.[0].commit.committer.date // empty')
 
-          # ▸ Serializa corpo completo (para debug futuro)
           printf '%s' "$pr_body" | jq -Rs '.' > body.txt
 
           merged_at_json="${merged_at:-null}"; [[ "$merged_at_json" != "null" ]] && merged_at_json="\"$merged_at_json\""
           first_commit_date_json="${first_commit_date:-null}"; [[ "$first_commit_date_json" != "null" ]] && first_commit_date_json="\"$first_commit_date_json\""
 
-          # ▸ Exporta envs
+          # ▸ Exportar env
           {
             echo "pr_number=$pr_number"
             echo "pr_title=$pr_title"
@@ -121,12 +122,7 @@ jobs:
           set -Eeuo pipefail
           echo '::group::Enviando dados ao Supabase'
 
-          # Converte score para JSON numérico ou null
-          if [[ "$productivity_score" == "null" ]]; then
-            jq_productivity_score="null"
-          else
-            jq_productivity_score="$productivity_score"
-          fi
+          if [[ "$productivity_score" == "null" ]]; then jq_prod_score="null"; else jq_prod_score="$productivity_score"; fi
 
           jq -n \
             --arg pr_number "$pr_number" \
@@ -144,7 +140,7 @@ jobs:
             --arg repository "$repository" \
             --arg merged_at_raw "$merged_at_json" \
             --arg first_commit_date_raw "$first_commit_date_json" \
-            --argjson productivity_score "$jq_productivity_score" \
+            --argjson productivity_score "$jq_prod_score" \
             '{
               pr_number: ($pr_number | tonumber),
               pr_title: $pr_title,
@@ -164,8 +160,7 @@ jobs:
               first_commit_date: ($first_commit_date_raw | fromjson)
             }' > payload.json
 
-          echo "Payload final:"
-          cat payload.json
+          echo "Payload final:" && cat payload.json
 
           curl -X POST \
             "$SUPABASE_URL/rest/v1/pr_metrics_v2?on_conflict=repository,pr_number" \
