@@ -16,8 +16,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      # ─────────────────────────────────────────────────────────────── #
+      # 1. Extrair informações do PR + novo formulário
+      # ─────────────────────────────────────────────────────────────── #
       - name: Extrair informações do PR
         id: extrair
+        shell: bash
         run: |
           echo '::group::Extraindo informações do PR'
 
@@ -31,72 +35,100 @@ jobs:
           developer_name="${{ github.actor }}"
           developer_email="unknown@example.com"
 
-          # Detectar ferramenta de IA
-          if echo "$pr_body" | grep -q '\- \[x\] Copilot'; then
+          # ▸ 1. Ferramenta de IA (exatamente uma)
+          shopt -s nocasematch
+          if echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Copilot'; then
             ia_tool_used="Copilot"
-          elif echo "$pr_body" | grep -q '\- \[x\] Cursor'; then
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Cursor'; then
             ia_tool_used="Cursor"
-          elif echo "$pr_body" | grep -q '\- \[x\] Devin'; then
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Devin'; then
             ia_tool_used="Devin"
-          elif echo "$pr_body" | grep -q '\- \[x\] Nenhuma'; then
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Nenhuma'; then
             ia_tool_used="Nenhuma"
-          elif echo "$pr_body" | grep -q '\- \[x\] Outra'; then
-            ia_tool_used=$(echo "$pr_body" | grep '\- \[x\] Outra' | sed -E 's/.*Outra \(qual\)?:\s*//')
+          elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Outra'; then
+            ia_tool_used=$(echo "$pr_body" | grep -iP '\-\s*\[x\]\s*Outra' | sed -E 's/.*Outra[^:]*:\s*//I')
+            [[ -z "$ia_tool_used" ]] && ia_tool_used="Outra"
           else
             ia_tool_used="not_informed"
           fi
+          shopt -u nocasematch
 
-          # Dados simulados
-          time_saved_percentage="20%"
-          time_saved_reason="Usando o Copilot, consegui acelerar a escrita do código."
-          ia_usage_mode="Autocomplete"
-          ia_usage_frequency="Cerca de metade do tempo"
-          ia_usage_investment="Resolver vulnerabilidades"
+          # ▸ 2. Cenários (múltiplos)
+          declare -A scenario_map=(
+            ["Geração de código boilerplate"]="boilerplate"
+            ["Explicação de trechos de código"]="explain_code"
+            ["Sugestões de melhorias/refatoração"]="refactor_suggestions"
+          )
+          scenarios=()
+          for pretty in "${!scenario_map[@]}"; do
+            if echo "$pr_body" | grep -iqP "\-\s*\[x\]\s*${pretty}"; then
+              scenarios+=("${scenario_map[$pretty]}")
+            fi
+          done
+          if [ ${#scenarios[@]} -eq 0 ]; then
+            ia_usage_scenarios="none"
+          else
+            IFS=',' ia_usage_scenarios="${scenarios[*]}"
+          fi
 
-          # Linhas adicionadas/removidas
+          # ▸ 3. Nota de produtividade 0-10
+          productivity_score=$(echo "$pr_body" | grep -oP '(?i)Produtividade *\\(0-10\\).*?([0-9]{1,2})' | tail -1 | grep -oP '[0-9]{1,2}')
+          if [[ -z "$productivity_score" || $productivity_score -gt 10 ]]; then
+            productivity_score="null"
+          fi
+
+          # ▸ 4. Justificativa (texto após bloco 💬)
+          productivity_reason=$(echo "$pr_body" | awk '
+            BEGIN{flag=0}
+            /###[[:space:]]*💬/{flag=1; next}
+            /^---/{flag=0}
+            flag {gsub(/^[> ]+/,""); printf "%s\\n",$0}
+          ' | sed ':a;N;$!ba;s/\n/ /g' | sed 's/  */ /g' | sed 's/\"/\\"/g')
+          [[ -z "$productivity_reason" ]] && productivity_reason=""
+
+          # ▸ 5. Linhas adicionadas/removidas
           pr_files_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/files"
           pr_files_json=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_files_url")
           added_lines=$(echo "$pr_files_json" | jq '[.[] | .additions] | add // 0')
           removed_lines=$(echo "$pr_files_json" | jq '[.[] | .deletions] | add // 0')
 
-          # Primeiro commit
+          # ▸ 6. Data do primeiro commit
           pr_commits_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/commits"
           first_commit_date=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_commits_url" | jq -r '.[0].commit.committer.date')
 
+          # ▸ 7. Salvar corpo do PR sanitizado para o jq
           echo "$pr_body" | jq -Rs '.' > body.txt
 
-          # Tratar campos nulos
+          # ▸ 8. Campos nulos em JSON
           merged_at_json="${merged_at:-null}"
-          if [[ "$merged_at_json" != "null" ]]; then
-            merged_at_json="\"$merged_at_json\""
-          fi
+          [[ "$merged_at_json" != "null" ]] && merged_at_json="\"$merged_at_json\""
+          first_commit_date_json="${first_commit_date:-null}"
+          [[ "$first_commit_date_json" != "null" ]] && first_commit_date_json="\"$first_commit_date_json\""
 
-          if [[ -z "$first_commit_date" || "$first_commit_date" == "null" ]]; then
-            first_commit_date_json="null"
-          else
-            first_commit_date_json="\"$first_commit_date\""
-          fi
-
-          echo "pr_number=$pr_number" >> $GITHUB_ENV
-          echo "pr_title=$pr_title" >> $GITHUB_ENV
-          echo "pr_status=$pr_status" >> $GITHUB_ENV
-          echo "developer_name=$developer_name" >> $GITHUB_ENV
-          echo "developer_email=$developer_email" >> $GITHUB_ENV
-          echo "created_at=$created_at" >> $GITHUB_ENV
-          echo "merged_at_json=$merged_at_json" >> $GITHUB_ENV
-          echo "ia_tool_used=$ia_tool_used" >> $GITHUB_ENV
-          echo "time_saved_percentage=$time_saved_percentage" >> $GITHUB_ENV
-          echo "time_saved_reason=$time_saved_reason" >> $GITHUB_ENV
-          echo "ia_usage_mode=$ia_usage_mode" >> $GITHUB_ENV
-          echo "ia_usage_frequency=$ia_usage_frequency" >> $GITHUB_ENV
-          echo "ia_usage_investment=$ia_usage_investment" >> $GITHUB_ENV
-          echo "added_lines=$added_lines" >> $GITHUB_ENV
-          echo "removed_lines=$removed_lines" >> $GITHUB_ENV
-          echo "repository=$repository" >> $GITHUB_ENV
-          echo "first_commit_date_json=$first_commit_date_json" >> $GITHUB_ENV
+          # ▸ 9. Exportar como env
+          {
+            echo "pr_number=$pr_number"
+            echo "pr_title=$pr_title"
+            echo "pr_status=$pr_status"
+            echo "developer_name=$developer_name"
+            echo "developer_email=$developer_email"
+            echo "created_at=$created_at"
+            echo "merged_at_json=$merged_at_json"
+            echo "ia_tool_used=$ia_tool_used"
+            echo "ia_usage_scenarios=$ia_usage_scenarios"
+            echo "productivity_score=$productivity_score"
+            echo "productivity_reason=$productivity_reason"
+            echo "added_lines=$added_lines"
+            echo "removed_lines=$removed_lines"
+            echo "repository=$repository"
+            echo "first_commit_date_json=$first_commit_date_json"
+          } >> $GITHUB_ENV
 
           echo '::endgroup::'
 
+      # ─────────────────────────────────────────────────────────────── #
+      # 2. Enviar payload ao Supabase
+      # ─────────────────────────────────────────────────────────────── #
       - name: Enviar dados ao Supabase
         run: |
           echo '::group::Enviando dados ao Supabase'
@@ -110,11 +142,9 @@ jobs:
             --arg developer_email "$developer_email" \
             --arg created_at "$created_at" \
             --arg ia_tool_used "$ia_tool_used" \
-            --arg time_saved_percentage "$time_saved_percentage" \
-            --arg time_saved_reason "$time_saved_reason" \
-            --arg ia_usage_mode "$ia_usage_mode" \
-            --arg ia_usage_frequency "$ia_usage_frequency" \
-            --arg ia_usage_investment "$ia_usage_investment" \
+            --arg ia_usage_scenarios "$ia_usage_scenarios" \
+            --arg productivity_score "$productivity_score" \
+            --arg productivity_reason "$productivity_reason" \
             --arg added_lines "$added_lines" \
             --arg removed_lines "$removed_lines" \
             --arg repository "$repository" \
@@ -130,19 +160,16 @@ jobs:
               created_at: $created_at,
               merged_at: ($merged_at_raw | fromjson),
               ia_tool_used: $ia_tool_used,
-              time_saved_percentage: $time_saved_percentage,
-              time_saved_reason: $time_saved_reason,
-              ia_usage_mode: $ia_usage_mode,
-              ia_usage_frequency: $ia_usage_frequency,
-              ia_usage_investment: $ia_usage_investment,
+              ia_usage_scenarios: $ia_usage_scenarios,
+              productivity_score: ($productivity_score | tonumber?),
+              productivity_reason: $productivity_reason,
               added_lines: ($added_lines | tonumber),
               removed_lines: ($removed_lines | tonumber),
               repository: $repository,
               first_commit_date: ($first_commit_date_raw | fromjson)
             }' > payload.json
 
-          echo "Payload final:"
-          cat payload.json
+          echo "Payload final:" && cat payload.json
 
           if [[ -z "$SUPABASE_URL" ]]; then
             echo "::error::SUPABASE_URL está vazio. Verifique seus secrets."
