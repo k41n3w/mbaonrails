@@ -33,6 +33,7 @@ jobs:
           developer_name="${{ github.actor }}"
           developer_email="unknown@example.com"
 
+          # Ferramenta de IA
           shopt -s nocasematch
           if echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Copilot'; then ia_tool_used="Copilot"
           elif echo "$pr_body" | grep -iqP '\-\s*\[x\]\s*Cursor'; then ia_tool_used="Cursor"
@@ -44,6 +45,7 @@ jobs:
           else ia_tool_used="not_informed"; fi
           shopt -u nocasematch
 
+          # Cenários de uso
           declare -A map=(
             ["Geração de código boilerplate"]="boilerplate"
             ["Explicação de trechos de código"]="explain_code"
@@ -53,29 +55,36 @@ jobs:
             if echo "$pr_body" | grep -iqP "\-\s*\[x\]\s*$p"; then scenarios+=("${map[$p]}"); fi; done
           ia_usage_scenarios=$(IFS=','; echo "${scenarios[*]}"); [[ -z "$ia_usage_scenarios" ]] && ia_usage_scenarios="none"
 
-          productivity_score=$(echo "$pr_body" | grep -oP '(?<=\*\*Produtividade \(0-10\):\*\*[:\s]*)(\*\*__)?\s*\K[0-9]{1,2}' | head -1 || true)
-          if [[ -z "$productivity_score" || "$productivity_score" -gt 10 ]]; then productivity_score="null"; fi
+          # Nota de produtividade (0-10)
+          productivity_score=$(echo "$pr_body" | grep -oP '(?<=\*\*Produtividade \(0-10\):\*\*:?\s*)(\*\*__)?\s*\K[0-9]{1,2}' | head -1 || true)
+          if [[ -z "$productivity_score" || "$productivity_score" -gt 10 ]]; then
+            productivity_score="null"
+          fi
 
+          # Justificativa da nota
           productivity_reason=$(echo "$pr_body" | awk '
             BEGIN{flag=0}
-            /### +Justificativa da nota/{flag=1; next}
+            /### *[Jj]ustificativa da nota/{flag=1; next}
             /^---/{flag=0}
             flag {gsub(/^[> ]+/,"",$0); if($0!="") printf "%s ",$0}
           ' | sed 's/  */ /g; s/"/\\"/g' | xargs)
 
+          # Linhas adicionadas/removidas
           pr_files_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/files"
           pr_files_json=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_files_url")
           added_lines=$(echo "$pr_files_json" | jq '[.[] | .additions] | add // 0')
           removed_lines=$(echo "$pr_files_json" | jq '[.[] | .deletions] | add // 0')
 
+          # Data do primeiro commit
           pr_commits_url="https://api.github.com/repos/${repository}/pulls/${pr_number}/commits"
           first_commit_date=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$pr_commits_url" | jq -r '.[0].commit.committer.date // empty')
 
           printf '%s' "$pr_body" | jq -Rs '.' > body.txt
 
-          merged_at_json="${merged_at:-null}"; [[ -n "$merged_at_json" && "$merged_at_json" != "null" ]] && merged_at_json="\"$merged_at_json\""
-          first_commit_date_json="${first_commit_date:-null}"; [[ -n "$first_commit_date_json" && "$first_commit_date_json" != "null" ]] && first_commit_date_json="\"$first_commit_date_json\""
+          merged_at_json="${merged_at:-null}"; [[ "$merged_at_json" != "null" ]] && merged_at_json="\"$merged_at_json\""
+          first_commit_date_json="${first_commit_date:-null}"; [[ "$first_commit_date_json" != "null" ]] && first_commit_date_json="\"$first_commit_date_json\""
 
+          # Exporta variáveis para o próximo passo
           {
             echo "pr_number=$pr_number"
             echo "pr_title=$pr_title"
@@ -97,9 +106,16 @@ jobs:
           echo '::endgroup::'
 
       - name: Enviar dados ao Supabase
+        shell: bash
         run: |
           set -Eeuo pipefail
           echo '::group::Enviando dados ao Supabase'
+
+          if [[ "$productivity_score" == "null" ]]; then
+            jq_productivity_score="null"
+          else
+            jq_productivity_score="$productivity_score"
+          fi
 
           jq -n \
             --arg pr_number "$pr_number" \
@@ -117,7 +133,7 @@ jobs:
             --arg repository "$repository" \
             --arg merged_at_raw "$merged_at_json" \
             --arg first_commit_date_raw "$first_commit_date_json" \
-            --argjson productivity_score ${productivity_score:-null} \
+            --argjson productivity_score "$jq_productivity_score" \
             '{
               pr_number: ($pr_number | tonumber),
               pr_title: $pr_title,
